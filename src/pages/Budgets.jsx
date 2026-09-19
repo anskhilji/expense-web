@@ -1,22 +1,48 @@
-import { useState } from 'react'
-import { useCategories, useCreateCategory, useDeleteCategory } from '../hooks/useCategories'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCreateCategory, useDeleteCategory } from '../hooks/useCategories'
 import { useBudgets, useAllocateBudget } from '../hooks/useBudgets'
 import RoleGate from '../components/RoleGate'
 import { currentMonth, formatMonthLabel } from '../utils/date'
 
 export default function Budgets() {
   const [month, setMonth] = useState(currentMonth())
-  const { data: categories } = useCategories()
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const qc = useQueryClient()
+
   const deleteCategory = useDeleteCategory()
-  const { data: budgetData, isLoading } = useBudgets(month)
   const allocate = useAllocateBudget()
   const createCategory = useCreateCategory()
   const [newCategory, setNewCategory] = useState('')
   const [amounts, setAmounts] = useState({})
   const [categoryError, setCategoryError] = useState(null)
 
-  const envelopeFor = (categoryId) =>
-    budgetData?.envelopes.find((e) => e.category_id === categoryId)
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useBudgets(month, search)
+  const sentinelRef = useRef(null)
+
+  // Debounce the search box 350ms before it hits the API, same as
+  // Expenses/Income, so it doesn't fire a request on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    if (!sentinelRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: '0px' }
+    )
+    observer.observe(sentinelRef.current)
+    return () => observer.disconnect()
+  }, [hasNextPage, fetchNextPage])
+
+  const envelopes = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data])
 
   async function handleAllocate(categoryId) {
     const amount = amounts[categoryId]
@@ -26,12 +52,14 @@ export default function Budgets() {
       month: `${month}-01`,
       allocated_amount: Number(amount),
     })
+    setAmounts({ ...amounts, [categoryId]: '' })
   }
 
   async function handleDeleteCategory(id) {
     setCategoryError(null)
     try {
       await deleteCategory.mutateAsync(id)
+      qc.invalidateQueries({ queryKey: ['budgets'] })
     } catch (err) {
       setCategoryError(err.errors?.category?.[0] || err.message)
     }
@@ -42,6 +70,7 @@ export default function Budgets() {
     if (!newCategory.trim()) return
     await createCategory.mutateAsync({ name: newCategory.trim() })
     setNewCategory('')
+    qc.invalidateQueries({ queryKey: ['budgets'] })
   }
 
   return (
@@ -64,39 +93,53 @@ export default function Budgets() {
 
       {isLoading && <p>Loading…</p>}
 
+      <input
+        type="text"
+        className="search-input"
+        placeholder="Search categories…"
+        title="Search by category name"
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+      />
+
       <table className="data-table">
         <thead>
-          <tr><th>Category</th><th>Allocated</th><th>Spent</th><th>Remaining</th><RoleGate permission="budgets.manage"><th>Set allocation</th></RoleGate><RoleGate permission="categories.manage"><th /></RoleGate></tr>
+          <tr><th>Category</th><th>Allocated</th><th>Spent</th><th>Remaining</th><RoleGate permission="budgets.manage"><th>Add to allocation</th></RoleGate><RoleGate permission="categories.manage"><th /></RoleGate></tr>
         </thead>
         <tbody>
-          {categories?.map((cat) => {
-            const env = envelopeFor(cat.id)
-            return (
-              <tr key={cat.id}>
-                <td>{cat.icon} {cat.name}</td>
-                <td>Rs {(env?.allocated ?? 0).toLocaleString()}</td>
-                <td>Rs {(env?.spent ?? 0).toLocaleString()}</td>
-                <td className={(env?.remaining ?? 0) < 0 ? 'text-negative' : ''}>Rs {(env?.remaining ?? 0).toLocaleString()}</td>
-                <RoleGate permission="budgets.manage">
-                  <td>
-                    <div className="inline-form inline-form--tight">
-                      <input type="number" min="0" step="0.01" placeholder="Amount"
-                        value={amounts[cat.id] ?? ''}
-                        onChange={(e) => setAmounts({ ...amounts, [cat.id]: e.target.value })} />
-                      <button className="btn btn--small" onClick={() => handleAllocate(cat.id)}>Save</button>
-                    </div>
-                  </td>
-                </RoleGate>
-                <RoleGate permission="categories.manage">
-                  <td>
-                    <button className="btn btn--ghost btn--small" onClick={() => handleDeleteCategory(cat.id)}>
-                      Delete
-                    </button>
-                  </td>
-                </RoleGate>
-              </tr>
-            )
-          })}
+          {envelopes.map((env) => (
+            <tr key={env.category_id}>
+              <td>{env.icon} {env.category_name}</td>
+              <td>Rs {env.allocated.toLocaleString()}</td>
+              <td>Rs {env.spent.toLocaleString()}</td>
+              <td className={env.remaining < 0 ? 'text-negative' : ''}>Rs {env.remaining.toLocaleString()}</td>
+              <RoleGate permission="budgets.manage">
+                <td>
+                  <div className="inline-form inline-form--tight">
+                    <input type="number" min="0" step="0.01" placeholder="Add amount"
+                      value={amounts[env.category_id] ?? ''}
+                      onChange={(e) => setAmounts({ ...amounts, [env.category_id]: e.target.value })} />
+                    <button className="btn btn--small" onClick={() => handleAllocate(env.category_id)}>Save</button>
+                  </div>
+                </td>
+              </RoleGate>
+              <RoleGate permission="categories.manage">
+                <td>
+                  <button className="btn btn--ghost btn--small" onClick={() => handleDeleteCategory(env.category_id)}>
+                    Delete
+                  </button>
+                </td>
+              </RoleGate>
+            </tr>
+          ))}
+          {!isLoading && envelopes.length === 0 && (
+            <tr><td colSpan={6} className="text-muted">No categories match "{search}".</td></tr>
+          )}
+          <tr ref={sentinelRef}>
+            <td colSpan={6} className="text-muted" style={{ textAlign: 'center' }}>
+              {isFetchingNextPage ? 'Loading more…' : (!hasNextPage && envelopes.length > 0 ? 'End of list.' : '')}
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

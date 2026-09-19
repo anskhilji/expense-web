@@ -1,12 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLedger } from '../hooks/useReports'
 import { currentMonth } from '../utils/date'
 import client from '../api/client'
 
 export default function Reports() {
-  const { data: ledger, isLoading } = useLedger(3)
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useLedger(10)
   const [exportMonth, setExportMonth] = useState(currentMonth())
   const [exportError, setExportError] = useState(null)
+  const [search, setSearch] = useState('')
+  const sentinelRef = useRef(null)
+
+  const ledger = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data])
+  const filteredLedger = useMemo(
+    () => ledger.filter((row) => row.label.toLowerCase().includes(search.trim().toLowerCase())),
+    [ledger, search]
+  )
+
+  useEffect(() => {
+    if (!sentinelRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: '0px' }
+    )
+    observer.observe(sentinelRef.current)
+    return () => observer.disconnect()
+  }, [hasNextPage, fetchNextPage])
 
   async function handleDownloadPdf() {
     setExportError(null)
@@ -51,12 +73,20 @@ export default function Reports() {
       <h1>Reports</h1>
 
       <section>
-        <h2>Last 3 months</h2>
+        <h2>Monthly ledger</h2>
         {isLoading && <p>Loading…</p>}
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Search months…"
+          title="Search by month"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <table className="data-table">
           <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net</th></tr></thead>
           <tbody>
-            {ledger?.map((row) => (
+            {filteredLedger.map((row) => (
               <tr key={row.month}>
                 <td>{row.label}</td>
                 <td>Rs {row.income.toLocaleString()}</td>
@@ -64,6 +94,14 @@ export default function Reports() {
                 <td className={row.net < 0 ? 'text-negative' : ''}>Rs {row.net.toLocaleString()}</td>
               </tr>
             ))}
+            {!isLoading && filteredLedger.length === 0 && (
+              <tr><td colSpan={4} className="text-muted">No months match "{search}".</td></tr>
+            )}
+            <tr ref={sentinelRef}>
+              <td colSpan={4} className="text-muted" style={{ textAlign: 'center' }}>
+                {isFetchingNextPage ? 'Loading more…' : (!hasNextPage && ledger.length > 0 ? 'End of list.' : '')}
+              </td>
+            </tr>
           </tbody>
         </table>
       </section>

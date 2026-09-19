@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import PasswordInput from '../components/PasswordInput'
 
 export default function ResetPassword() {
     const { resetPassword } = useAuth()
@@ -52,12 +53,12 @@ export default function ResetPassword() {
 
                 <label>
                     New password
-                    <input type="password" required minLength={8} value={form.password}
+                    <PasswordInput minLength={8} value={form.password}
                         onChange={(e) => setForm({ ...form, password: e.target.value })} />
                 </label>
                 <label>
                     Confirm new password
-                    <input type="password" required minLength={8} value={form.password_confirmation}
+                    <PasswordInput minLength={8} value={form.password_confirmation}
                         onChange={(e) => setForm({ ...form, password_confirmation: e.target.value })} />
                 </label>
 

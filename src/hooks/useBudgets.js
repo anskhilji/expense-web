@@ -1,10 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '../api/client'
 
-export function useBudgets(month) {
-  return useQuery({
-    queryKey: ['budgets', month],
-    queryFn: async () => (await client.get('/budgets', { params: { month } })).data,
+export function useBudgets(month, search = '') {
+  return useInfiniteQuery({
+    queryKey: ['budgets', month, search],
+    queryFn: async ({ pageParam = 1 }) =>
+      (await client.get('/budgets', {
+        params: { month, search, page: pageParam, per_page: 10 },
+      })).data,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.next_page : undefined),
   })
 }
 

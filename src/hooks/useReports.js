@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import client from '../api/client'
 
 export function useMonthSummary(month) {
@@ -8,9 +8,12 @@ export function useMonthSummary(month) {
   })
 }
 
-export function useLedger(months = 3) {
-  return useQuery({
-    queryKey: ['reports-ledger', months],
-    queryFn: async () => (await client.get('/reports/ledger', { params: { months } })).data.months,
+export function useLedger(perPage = 10) {
+  return useInfiniteQuery({
+    queryKey: ['reports-ledger', perPage],
+    queryFn: async ({ pageParam = 1 }) =>
+      (await client.get('/reports/ledger', { params: { page: pageParam, per_page: perPage } })).data,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.next_page : undefined),
   })
 }

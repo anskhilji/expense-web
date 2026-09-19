@@ -8,6 +8,7 @@ import { currentMonth, formatMonthLabel } from '../utils/date'
 export default function Dashboard() {
   const [month, setMonth] = useState(currentMonth())
   const { data, isLoading, isError } = useMonthSummary(month)
+  const [search, setSearch] = useState('')
 
   return (
     <div className="page">
@@ -48,13 +49,27 @@ export default function Dashboard() {
           </RoleGate>
 
           <h2>Category envelopes</h2>
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search categories…"
+            title="Search by category name"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
           <div className="envelope-grid">
-            {data.envelopes.map((env) => (
-              <EnvelopeCard key={env.category_id} envelope={env} />
-            ))}
+            {data.envelopes
+              .filter((env) => env.category_name?.toLowerCase().includes(search.trim().toLowerCase()))
+              .map((env) => (
+                <EnvelopeCard key={env.category_id} envelope={env} />
+              ))}
             {data.envelopes.length === 0 && (
               <p className="text-muted">No categories yet — add one from the Budgets page.</p>
             )}
+            {data.envelopes.length > 0 &&
+              data.envelopes.filter((env) => env.category_name?.toLowerCase().includes(search.trim().toLowerCase())).length === 0 && (
+                <p className="text-muted">No categories match "{search}".</p>
+              )}
           </div>
         </>
       )}

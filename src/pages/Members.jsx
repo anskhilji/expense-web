@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   useMembers, useInviteMember, useChangeMemberRole, useRemoveMember,
   useBlockMember, useUnblockMember,
@@ -9,7 +9,9 @@ const ROLES = ['admin', 'editor', 'contributor', 'viewer']
 
 export default function Members() {
   const { user } = useAuth()
-  const { data: members, isLoading } = useMembers()
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useMembers(search)
   const invite = useInviteMember()
   const changeRole = useChangeMemberRole()
   const removeMember = useRemoveMember()
@@ -20,6 +22,28 @@ export default function Members() {
   const [invitedEmail, setInvitedEmail] = useState(null)
   const [error, setError] = useState(null)
   const [memberError, setMemberError] = useState(null)
+  const sentinelRef = useRef(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 350)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    if (!sentinelRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: '0px' }
+    )
+    observer.observe(sentinelRef.current)
+    return () => observer.disconnect()
+  }, [hasNextPage, fetchNextPage])
+
+  const members = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data])
 
   async function handleInvite(e) {
     e.preventDefault()
@@ -40,8 +64,6 @@ export default function Members() {
     try {
       await removeMember.mutateAsync(userId)
     } catch (err) {
-      // Backend refuses when this member has expenses/incomes on record —
-      // surface that message so the admin knows to block instead.
       setMemberError(err.errors?.user?.[0] || err.message)
     }
   }
@@ -89,10 +111,19 @@ export default function Members() {
 
       {isLoading && <p>Loading…</p>}
 
+      <input
+        type="text"
+        className="search-input"
+        placeholder="Search members…"
+        title="Search by name, email, or role"
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+      />
+
       <table className="data-table">
         <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th /></tr></thead>
         <tbody>
-          {members?.map((m) => (
+          {members.map((m) => (
             <tr key={m.user_id}>
               <td>{m.name}</td>
               <td>{m.email}</td>
@@ -128,6 +159,14 @@ export default function Members() {
               </td>
             </tr>
           ))}
+          {!isLoading && members.length === 0 && (
+            <tr><td colSpan={5} className="text-muted">No members match "{search}".</td></tr>
+          )}
+          <tr ref={sentinelRef}>
+            <td colSpan={5} className="text-muted" style={{ textAlign: 'center' }}>
+              {isFetchingNextPage ? 'Loading more…' : (!hasNextPage && members.length > 0 ? 'End of list.' : '')}
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

@@ -1,10 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '../api/client'
 
-export function useMembers() {
-  return useQuery({
-    queryKey: ['members'],
-    queryFn: async () => (await client.get('/org/members')).data.data,
+export function useMembers(search = '') {
+  return useInfiniteQuery({
+    queryKey: ['members', search],
+    queryFn: async ({ pageParam = 1 }) =>
+      (await client.get('/org/members', { params: { search, page: pageParam, per_page: 10 } })).data,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.next_page : undefined),
   })
 }
 
