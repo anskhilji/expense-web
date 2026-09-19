@@ -23,3 +23,14 @@ export function useAllocateBudget() {
     },
   })
 }
+
+export function useUpdateBudget() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload) => client.put('/budgets', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budgets'] })
+      qc.invalidateQueries({ queryKey: ['reports-summary'] })
+    },
+  })
+}

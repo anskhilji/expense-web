@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCreateCategory, useDeleteCategory } from '../hooks/useCategories'
-import { useBudgets, useAllocateBudget } from '../hooks/useBudgets'
+import { useBudgets, useAllocateBudget, useUpdateBudget } from '../hooks/useBudgets'
 import RoleGate from '../components/RoleGate'
 import { currentMonth, formatMonthLabel } from '../utils/date'
 
@@ -13,9 +13,13 @@ export default function Budgets() {
 
   const deleteCategory = useDeleteCategory()
   const allocate = useAllocateBudget()
+  const updateBudget = useUpdateBudget()
   const createCategory = useCreateCategory()
   const [newCategory, setNewCategory] = useState('')
   const [amounts, setAmounts] = useState({})
+  const [editing, setEditing] = useState({})
+  const [editAmounts, setEditAmounts] = useState({})
+  const [budgetErrors, setBudgetErrors] = useState({})
   const [categoryError, setCategoryError] = useState(null)
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useBudgets(month, search)
@@ -53,6 +57,37 @@ export default function Budgets() {
       allocated_amount: Number(amount),
     })
     setAmounts({ ...amounts, [categoryId]: '' })
+  }
+
+  function startEditing(env) {
+    setBudgetErrors({ ...budgetErrors, [env.category_id]: null })
+    setEditAmounts({ ...editAmounts, [env.category_id]: String(env.allocated) })
+    setEditing({ ...editing, [env.category_id]: true })
+  }
+
+  function cancelEditing(categoryId) {
+    setBudgetErrors({ ...budgetErrors, [categoryId]: null })
+    setEditing({ ...editing, [categoryId]: false })
+  }
+
+  async function handleUpdate(categoryId) {
+    const amount = editAmounts[categoryId]
+    if (amount === undefined || amount === '') return
+
+    setBudgetErrors({ ...budgetErrors, [categoryId]: null })
+    try {
+      await updateBudget.mutateAsync({
+        category_id: categoryId,
+        month: `${month}-01`,
+        allocated_amount: Number(amount),
+      })
+      setEditing({ ...editing, [categoryId]: false })
+    } catch (err) {
+      setBudgetErrors({
+        ...budgetErrors,
+        [categoryId]: err.errors?.allocated_amount?.[0] || err.message,
+      })
+    }
   }
 
   async function handleDeleteCategory(id) {
@@ -104,7 +139,7 @@ export default function Budgets() {
 
       <table className="data-table">
         <thead>
-          <tr><th>Category</th><th>Allocated</th><th>Spent</th><th>Remaining</th><RoleGate permission="budgets.manage"><th>Add to allocation</th></RoleGate><RoleGate permission="categories.manage"><th /></RoleGate></tr>
+          <tr><th>Category</th><th>Allocated</th><th>Spent</th><th>Remaining</th><RoleGate permission="budgets.manage"><th>Add to allocation</th><th>Edit allocation</th></RoleGate><RoleGate permission="categories.manage"><th /></RoleGate></tr>
         </thead>
         <tbody>
           {envelopes.map((env) => (
@@ -122,6 +157,22 @@ export default function Budgets() {
                     <button className="btn btn--small" onClick={() => handleAllocate(env.category_id)}>Save</button>
                   </div>
                 </td>
+                <td>
+                  {editing[env.category_id] ? (
+                    <div className="inline-form inline-form--tight">
+                      <input type="number" min={env.spent} step="0.01" aria-label={`Final allocation for ${env.category_name}`}
+                        value={editAmounts[env.category_id] ?? ''}
+                        onChange={(e) => setEditAmounts({ ...editAmounts, [env.category_id]: e.target.value })} />
+                      <button className="btn btn--small" type="button" onClick={() => handleUpdate(env.category_id)}>Save</button>
+                      <button className="btn btn--ghost btn--small" type="button" onClick={() => cancelEditing(env.category_id)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn--ghost btn--small" type="button" onClick={() => startEditing(env)}>
+                      Edit
+                    </button>
+                  )}
+                  {budgetErrors[env.category_id] && <div className="alert alert--error">{budgetErrors[env.category_id]}</div>}
+                </td>
               </RoleGate>
               <RoleGate permission="categories.manage">
                 <td>
@@ -133,10 +184,10 @@ export default function Budgets() {
             </tr>
           ))}
           {!isLoading && envelopes.length === 0 && (
-            <tr><td colSpan={6} className="text-muted">No categories match "{search}".</td></tr>
+            <tr><td colSpan={7} className="text-muted">No categories match "{search}".</td></tr>
           )}
           <tr ref={sentinelRef}>
-            <td colSpan={6} className="text-muted" style={{ textAlign: 'center' }}>
+            <td colSpan={7} className="text-muted" style={{ textAlign: 'center' }}>
               {isFetchingNextPage ? 'Loading more…' : (!hasNextPage && envelopes.length > 0 ? 'End of list.' : '')}
             </td>
           </tr>
