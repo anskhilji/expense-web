@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import client from '../api/client'
 
-export function useExpenses({ month, categoryId } = {}) {
+export function useExpenses({ month, categoryId, search } = {}) {
   return useQuery({
-    queryKey: ['expenses', month, categoryId],
+    queryKey: ['expenses', month, categoryId, search],
     queryFn: async () =>
-      (await client.get('/expenses', { params: { month, category_id: categoryId } })).data.data,
+      (await client.get('/expenses', { params: { month, category_id: categoryId, search } })).data.data,
   })
 }
 

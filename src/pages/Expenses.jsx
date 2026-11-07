@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useCategories } from '../hooks/useCategories'
 import { useExpenses, useDeleteExpense } from '../hooks/useExpenses'
 import RoleGate from '../components/RoleGate'
@@ -7,15 +7,30 @@ import { currentMonth } from '../utils/date'
 export default function Expenses() {
   const [month, setMonth] = useState(currentMonth())
   const [categoryId, setCategoryId] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   const { data: categories } = useCategories()
-  const { data: expenses, isLoading } = useExpenses({ month, categoryId: categoryId || undefined })
+  const { data: expenses, isLoading } = useExpenses({ month, categoryId: categoryId || undefined, search })
   const deleteExpense = useDeleteExpense()
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 350)
+    return () => clearTimeout(timer)
+  }, [searchInput])
 
   return (
     <div className="page">
       <div className="page__head">
         <h1>Expenses</h1>
         <div className="filters">
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search expenses…"
+            title="Search by note, category, date, or logged by"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
             <option value="">All categories</option>
             {categories?.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
